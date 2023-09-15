@@ -1,0 +1,19 @@
+table ReadRequest {
+    letter: string;
+    before_number: int;
+    dummy_one: uint;
+    dummy_two: SampleSchema;
+    dummy_three: [int];
+}
+
+table ReadResponse {
+    after_number: int;
+    dummy_one: uint;
+    dummy_two: SampleSchema;
+    dummy_three: [int];
+}
+
+table SampleSchema {
+    sample_field_one: bool;
+    sample_field_two: bool;
+}

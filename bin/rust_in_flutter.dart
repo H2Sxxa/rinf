@@ -114,14 +114,14 @@ utilizing the capabilities of the
 To run and build this app, you need to have
 [Flutter SDK](https://docs.flutter.dev/get-started/install),
 [Rust toolchain](https://www.rust-lang.org/tools/install),
-and [Protobuf compiler](https://grpc.io/docs/protoc-installation)
+and [FlatBuffers compiler](https://github.com/google/flatbuffers/releases)
 installed on your system.
 You can check that your system is ready with the commands below.
 Note that all the Flutter subcomponents should be installed.
 
 ```bash
 rustc --version
-protoc --version
+flatc --version
 flutter doctor
 ```
 
@@ -133,7 +133,7 @@ cargo install rifs
 
 Messages sent between Dart and Rust are implemented using Protobuf.
 If you have newly cloned the project repository
-or made changes to the `.proto` files in the `./messages` directory,
+or made changes to the `.fbs` files in the `./messages` directory,
 run the following command:
 
 ```bash
@@ -148,7 +148,7 @@ please refer to Rust-In-Flutter's [documentation](https://docs.cunarist.com/rust
   await readmeFile.writeAsString(readmeSplitted.join('\n\n') + '\n');
 
   // Add Dart dependencies
-  await Process.run('dart', ['pub', 'add', 'protobuf']);
+  await Process.run('dart', ['pub', 'add', 'flat_buffers']);
 
   // Modify `./lib/main.dart`
   await Process.run('dart', ['format', './lib/main.dart']);
@@ -345,7 +345,7 @@ Future<void> _runAdvancedCommand(
 Future<void> _generateMessageCode() async {
   // Prepare paths.
   final flutterProjectPath = Directory.current;
-  final protoPath = flutterProjectPath.uri.resolve('messages').toFilePath();
+  final messagePath = flutterProjectPath.uri.resolve('messages').toFilePath();
   final rustOutputPath =
       flutterProjectPath.uri.resolve('native/hub/src/messages').toFilePath();
   final dartOutputPath =
@@ -355,117 +355,73 @@ Future<void> _generateMessageCode() async {
   await Directory(dartOutputPath).create(recursive: true);
   await _emptyDirectory(dartOutputPath);
 
-  // Get the list of `.proto` files.
-  final Stream<FileSystemEntity> protoEntityStream =
-      Directory(protoPath).list();
-  final List<String> protoFilenames = [];
-  await for (final entity in protoEntityStream) {
+  // Get the list of `.fbs` files.
+  final Stream<FileSystemEntity> messageEntityStream =
+      Directory(messagePath).list();
+  final List<String> resourceNames = [];
+  await for (final entity in messageEntityStream) {
     if (entity is File) {
-      final String filename = entity.uri.pathSegments.last;
-      if (filename.endsWith('.proto')) {
-        protoFilenames.add(filename);
+      final filename = entity.uri.pathSegments.last;
+      final parts = filename.split('.');
+      parts.removeLast(); // Remove the extension from the filename.
+      final fileNameWithoutExtension = parts.join('.');
+      if (filename.endsWith('.fbs')) {
+        resourceNames.add(fileNameWithoutExtension);
       }
     }
-  }
-  final rustResourceNames = protoFilenames.map((fileName) {
-    final parts = fileName.split('.');
-    parts.removeLast(); // Remove the extension from the filename.
-    final fileNameWithoutExtension = parts.join('.');
-    return fileNameWithoutExtension;
-  }).toList();
-
-  // Verify `package` statement in `.proto` files.
-  // Package name should be the same as the filename
-  // because Rust filenames are written with package name
-  // and Dart filenames are written with the `.proto` filename.
-  for (final resourceName in rustResourceNames) {
-    final protoFile = File('messages/$resourceName.proto');
-    final lines = await protoFile.readAsLines();
-    List<String> outputLines = [];
-    for (var line in lines) {
-      final packagePattern = r'^package\s+[a-zA-Z_][a-zA-Z0-9_]*\s*[^=];$';
-      if (RegExp(packagePattern).hasMatch(line.trim())) {
-        continue;
-      } else if (line.trim().startsWith("syntax")) {
-        continue;
-      } else {
-        outputLines.add(line);
-      }
-    }
-    outputLines.insert(0, 'package $resourceName;');
-    outputLines.insert(0, 'syntax = "proto3";');
-    await protoFile.writeAsString(outputLines.join('\n') + '\n');
   }
 
   // Generate Rust message files.
-  print("Verifying `protoc-gen-prost` for Rust." +
-      " This might take a while if there are new updates to be installed.");
-  final cargoInstallCommand = await Process.run('cargo', [
-    'install',
-    'protoc-gen-prost',
+  final rustGenerationResult = await Process.run('flatc', [
+    '--rust',
+    '-o',
+    rustOutputPath,
+    '--filename-suffix',
+    '',
+    ...resourceNames.map((item) => 'messages/$item.fbs').toList(),
   ]);
-  if (cargoInstallCommand.exitCode != 0) {
-    throw Exception('Cannot globally install `protoc-gen-prost` Rust crate');
+  if (rustGenerationResult.exitCode != 0) {
+    throw Exception('Could not compile `.fbs` files into Rust');
   }
-  final protocRustResult = await Process.run('protoc', [
-    '--proto_path=$protoPath',
-    '--prost_out=$rustOutputPath',
-    ...protoFilenames,
-  ]);
-  if (protocRustResult.exitCode != 0) {
-    throw Exception('Could not compile `.proto` files into Rust');
-  }
-  rustResourceNames.asMap().forEach((index, rustResourceName) {
+  resourceNames.asMap().forEach((index, rustResourceName) {
     _appendLineToFile(
       'native/hub/src/messages/$rustResourceName.rs',
       'pub const ID: i32 = $index;',
     );
   });
 
+  // Replace `unsafe fn` with `fn` in Rust code.
+  final files = Directory(rustOutputPath).listSync();
+  for (final file in files) {
+    if (file is File) {
+      final fileContent = file.readAsStringSync();
+      final modifiedContent = fileContent.replaceAll('unsafe fn', 'fn');
+      file.writeAsStringSync(modifiedContent);
+    }
+  }
+
   // Generate `mod.rs` for `messages` module in Rust.
-  final modRsLines = rustResourceNames.map((resourceName) async {
+  final modRsLines = resourceNames.map((resourceName) async {
     return 'pub mod $resourceName;';
   });
   final modRsContent = (await Future.wait(modRsLines)).join('\n');
   await File('$rustOutputPath/mod.rs').writeAsString(modRsContent);
 
   // Generate Dart message files.
-  print("Verifying `protoc_plugin` for Dart." +
-      " This might take a while if there are new updates to be installed.");
-  final pubGlobalActivateCommand = await Process.run('dart', [
-    'pub',
-    'global',
-    'activate',
-    'protoc_plugin',
+  final dartGenerationResult = await Process.run('flatc', [
+    '--dart',
+    '-o',
+    dartOutputPath,
+    '--filename-suffix',
+    '',
+    ...resourceNames.map((item) => 'messages/$item.fbs').toList(),
   ]);
-  if (pubGlobalActivateCommand.exitCode != 0) {
-    throw Exception('Cannot globally install `protoc_plugin` Dart package');
+  if (dartGenerationResult.exitCode != 0) {
+    throw Exception('Could not compile `.fbs` files into Rust');
   }
-  final newEnvironment = Map<String, String>.from(Platform.environment);
-  final currentPathVariable = newEnvironment['PATH'];
-  final pubCacheBinPath = Platform.isWindows
-      ? '${Platform.environment['LOCALAPPDATA']}\\Pub\\Cache\\bin'
-      : '${Platform.environment['HOME']}/.pub-cache/bin';
-  final pathSeparator = Platform.isWindows ? ';' : ':';
-  final newPathVariable = currentPathVariable != null
-      ? '$currentPathVariable$pathSeparator$pubCacheBinPath'
-      : pubCacheBinPath;
-  newEnvironment['PATH'] = newPathVariable;
-  final protocDartResult = await Process.run(
-    'protoc',
-    [
-      '--proto_path=$protoPath',
-      '--dart_out=$dartOutputPath',
-      ...protoFilenames,
-    ],
-    environment: newEnvironment,
-  );
-  if (protocDartResult.exitCode != 0) {
-    throw Exception('Could not compile `.proto` files into Dart');
-  }
-  rustResourceNames.asMap().forEach((index, rustResourceName) {
+  resourceNames.asMap().forEach((index, rustResourceName) {
     _appendLineToFile(
-      'lib/messages/$rustResourceName.pb.dart',
+      'lib/messages/$rustResourceName.dart',
       'const ID = $index;',
     );
   });

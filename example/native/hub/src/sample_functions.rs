@@ -3,10 +3,10 @@
 
 use crate::bridge::api::{RustOperation, RustRequest, RustResponse, RustSignal};
 use crate::bridge::send_rust_signal;
-use prost::Message;
+use crate::messages::counter_number::{SampleSchema, SampleSchemaArgs};
 
 pub async fn handle_counter_number(rust_request: RustRequest) -> RustResponse {
-    use crate::messages::counter_number::{ReadRequest, ReadResponse};
+    use crate::messages::counter_number::{ReadRequest, ReadResponse, ReadResponseArgs};
 
     match rust_request.operation {
         RustOperation::Create => RustResponse::default(),
@@ -15,21 +15,34 @@ pub async fn handle_counter_number(rust_request: RustRequest) -> RustResponse {
             // because schema will differ by the operation type.
 
             // Decode raw bytes into a Rust message object.
-            let request_message = ReadRequest::decode(&rust_request.bytes[..]).unwrap();
+            let request_message = flatbuffers::root::<ReadRequest>(&rust_request.bytes).unwrap();
 
             // Perform a simple calculation.
-            let after_value: i32 = sample_crate::add_seven(request_message.before_number);
+            let after_value: i32 = sample_crate::add_seven(request_message.before_number());
 
             // Return the response that will be sent to Dart.
-            let response_message = ReadResponse {
-                after_number: after_value,
-                dummy_one: request_message.dummy_one,
-                dummy_two: request_message.dummy_two,
-                dummy_three: request_message.dummy_three,
-            };
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let dummy_two = Some(SampleSchema::create(
+                &mut builder,
+                &SampleSchemaArgs {
+                    sample_field_one: false,
+                    sample_field_two: false,
+                },
+            ));
+            let dummy_three =
+                Some(builder.create_vector(request_message.dummy_three().unwrap().safe_slice()));
+            let response_message = ReadResponse::create(
+                &mut builder,
+                &ReadResponseArgs {
+                    after_number: after_value,
+                    dummy_one: request_message.dummy_one(),
+                    dummy_two,
+                    dummy_three,
+                },
+            );
             RustResponse {
                 successful: true,
-                bytes: response_message.encode_to_vec(),
+                bytes: response_message.to_be_bytes().to_vec(),
             }
         }
         RustOperation::Update => RustResponse::default(),

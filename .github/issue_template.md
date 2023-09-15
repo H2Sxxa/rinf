@@ -12,6 +12,6 @@ _Please provide the output from the command below, using markdown codeblock synt
 
 ```bash
 rustc --version
-protoc --version
+flatc --version
 flutter doctor
 ```

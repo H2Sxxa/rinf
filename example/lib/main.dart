@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rust_in_flutter/rust_in_flutter.dart';
-import 'package:example_app/messages/counter_number.pb.dart' as counterNumber;
-import 'package:example_app/messages/mandelbrot.pb.dart' as mandelbrot;
+import 'package:example_app/messages/counter_number.dart' as counterNumber;
+import 'package:example_app/messages/mandelbrot.dart' as mandelbrot;
 
 void main() async {
   // Wait for initialization to be completed first.
@@ -25,11 +25,11 @@ class Home extends StatelessWidget {
 
   // This method interacts with Rust.
   void _incrementCount() async {
-    final requestMessage = counterNumber.ReadRequest(
+    final requestMessage = counterNumber.ReadRequestObjectBuilder(
       letter: "Hello from Dart!",
       beforeNumber: _countNotifier.value,
       dummyOne: 1,
-      dummyTwo: counterNumber.SampleSchema(
+      dummyTwo: counterNumber.SampleSchemaObjectBuilder(
         sampleFieldOne: true,
         sampleFieldTwo: false,
       ),
@@ -40,7 +40,7 @@ class Home extends StatelessWidget {
       resource: counterNumber.ID,
       operation: RustOperation.Read,
       // Convert Dart message object into raw bytes.
-      bytes: requestMessage.writeToBuffer(),
+      bytes: requestMessage.toBytes(),
     );
 
     // Use `requestToRust` from `rust_in_flutter.dart`
@@ -50,7 +50,7 @@ class Home extends StatelessWidget {
     if (rustResponse.successful) {
       // Convert raw bytes into Dart message objects.
       final responseMessage =
-          counterNumber.ReadResponse.fromBuffer(rustResponse.bytes);
+          new counterNumber.ReadResponse(rustResponse.bytes);
       _countNotifier.value = responseMessage.afterNumber;
     }
   }

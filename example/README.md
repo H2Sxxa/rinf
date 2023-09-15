@@ -11,18 +11,18 @@ utilizing the capabilities of the
 To run and build this app, you need to have
 [Flutter SDK](https://docs.flutter.dev/get-started/install),
 [Rust toolchain](https://www.rust-lang.org/tools/install),
-and [Protobuf compiler](https://grpc.io/docs/protoc-installation)
+and [FlatBuffers compiler](https://github.com/google/flatbuffers/releases)
 installed on your system.
 You can check that your system is ready with the commands below.
 Note that all the Flutter subcomponents should be installed.
 
 ```bash
 rustc --version
-protoc --version
+flatc --version
 flutter doctor
 ```
 
-To get started with Rust-In-Flutter, you'll need to install the CLI tool.
+Also, please install the CLI tool for Rust-In-Flutter
 
 ```bash
 cargo install rifs
@@ -30,7 +30,7 @@ cargo install rifs
 
 Messages sent between Dart and Rust are implemented using Protobuf.
 If you have newly cloned the project repository
-or made changes to the `.proto` files in the `./messages` directory,
+or made changes to the `.fbs` files in the `./messages` directory,
 run the following command:
 
 ```bash
