@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:rinf/rinf.dart';
+import 'package:rust_in_flutter/rust_in_flutter.dart';
 import 'package:example_app/messages/counter_number.pb.dart' as counterNumber;
 import 'package:example_app/messages/mandelbrot.pb.dart' as mandelbrot;
 
